@@ -3,12 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import ceil
 from pathlib import Path
-from typing import Iterable
 
-from rich.console import Console
+from rich.console import Console, Group
 from rich.panel import Panel
 from rich.prompt import Confirm
 from rich.table import Table
+from rich.text import Text
 
 console = Console()
 
@@ -43,6 +43,38 @@ class Lesson:
             )
 
 
+@dataclass
+class TargetCalculation:
+    status: str
+    target_grade_points: float
+    required_percentage: float | None
+    required_raw_points: int | None
+    total_raw_points: int
+    current_raw_points: int
+    missing_raw_points: int
+    remaining_lessons: int
+    available_raw_points: int
+    average_needed_per_lesson: int | None
+    skippable_lessons: int | None
+    lessons_still_needed: int | None
+    reason: str | None = None
+    shortage: int | None = None
+
+
+@dataclass
+class MaxEffortCalculation:
+    max_reachable_grade_points: float
+    required_percentage: float | None
+    required_raw_points: int | None
+    total_raw_points: int
+    current_raw_points: int
+    missing_raw_points: int
+    available_raw_points: int
+    minimum_extra_effort: int
+    lessons_needed: int
+    lessons_skippable: int
+
+
 # Update this with real data as lessons are held.
 LESSONS = [
     Lesson(6, 1),
@@ -72,38 +104,14 @@ def plural(value: int, singular: str, plural_form: str | None = None) -> str:
     return plural_form or f"{singular}s"
 
 
-def make_result_box(title: str, rows: Iterable[tuple[str, str]]) -> str:
-    rows = list(rows)
-
-    if not rows:
-        return title
-
-    label_width = max(len(label) for label, _ in rows)
-    value_width = max(len(value) for _, value in rows)
-    content_width = label_width + value_width + 3
-    title_width = len(title) + 2
-
-    width = max(content_width, title_width)
-
-    lines = [
-        f"╭─ {title}{'─' * (width - len(title) - 1)}╮",
-    ]
-
-    for label, value in rows:
-        line = f"{label:<{label_width}} : {value:<{value_width}}"
-        lines.append(f"│ {line:<{width}} │")
-
-    lines.append(f"╰{'─' * (width + 2)}╯")
-
-    return "\n".join(lines)
-
-
 def calculate_points(
     lessons: list[Lesson],
     scale: list[PointScale],
     include_projections: bool = True,
 ) -> float:
-    sorted_scale = sorted(scale, key=lambda x: x.percentage, reverse=True)
+    sorted_scale = sorted(
+        scale, key=lambda point_scale: point_scale.percentage, reverse=True
+    )
 
     relevant_lessons = [
         lesson for lesson in lessons if include_projections or not lesson.projection
@@ -124,127 +132,104 @@ def calculate_points(
     return 0
 
 
-def get_target_rows(
+def calculate_target(
     lessons: list[Lesson],
     scale: list[PointScale],
     target_points: float,
-    distribute_points: bool = False,
-) -> tuple[str, list[tuple[str, str]]]:
+) -> TargetCalculation:
     matching_scales = [
         point_scale for point_scale in scale if point_scale.points >= target_points
     ]
 
-    if not matching_scales:
-        return (
-            "Not possible",
-            [
-                ("Target grade points", format_grade_points(target_points)),
-                ("Reason", "No matching point scale exists"),
-            ],
-        )
+    total_raw_points = sum(lesson.max_points for lesson in lessons)
 
-    target_scale = min(matching_scales, key=lambda x: x.percentage)
-
-    total_max_points = sum(lesson.max_points for lesson in lessons)
-
-    achieved_points = sum(
+    current_raw_points = sum(
         lesson.achieved_points for lesson in lessons if not lesson.projection
     )
 
     projection_lessons = [lesson for lesson in lessons if lesson.projection]
 
-    remaining_lessons_count = len(projection_lessons)
+    remaining_lessons = len(projection_lessons)
 
-    available_projection_points = sum(
-        lesson.max_points for lesson in projection_lessons
-    )
+    available_raw_points = sum(lesson.max_points for lesson in projection_lessons)
 
-    required_points = ceil(target_scale.percentage * total_max_points)
-    missing_points = max(0, required_points - achieved_points)
-
-    common_rows = [
-        ("Target grade points", format_grade_points(target_points)),
-        ("Required percentage", format_percentage(target_scale.percentage)),
-        ("Required raw points", f"{required_points}/{total_max_points}"),
-        ("Current raw points", f"{achieved_points}/{total_max_points}"),
-    ]
-
-    if distribute_points:
-        if remaining_lessons_count == 0:
-            if missing_points == 0:
-                return (
-                    "Target already reached",
-                    common_rows
-                    + [
-                        ("Needed per lesson", "0 points"),
-                    ],
-                )
-
-            return (
-                "Not possible",
-                common_rows
-                + [
-                    ("Reason", "No remaining lessons"),
-                    ("Missing raw points", f"{missing_points}"),
-                ],
-            )
-
-        if missing_points > available_projection_points:
-            shortage = missing_points - available_projection_points
-
-            return (
-                "Not possible",
-                common_rows
-                + [
-                    ("Missing raw points", f"{missing_points}"),
-                    ("Available raw points", f"{available_projection_points}"),
-                    ("Short by", f"{shortage} {plural(shortage, 'point')}"),
-                ],
-            )
-
-        points_per_lesson = ceil(missing_points / remaining_lessons_count)
-
-        return (
-            "Points needed per remaining lesson",
-            common_rows
-            + [
-                ("Missing raw points", f"{missing_points}"),
-                ("Remaining lessons", f"{remaining_lessons_count}"),
-                ("Available raw points", f"{available_projection_points}"),
-                (
-                    "Needed per lesson",
-                    f"{points_per_lesson} {plural(points_per_lesson, 'point')}",
-                ),
-            ],
+    if not matching_scales:
+        return TargetCalculation(
+            status="not_possible",
+            target_grade_points=target_points,
+            required_percentage=None,
+            required_raw_points=None,
+            total_raw_points=total_raw_points,
+            current_raw_points=current_raw_points,
+            missing_raw_points=0,
+            remaining_lessons=remaining_lessons,
+            available_raw_points=available_raw_points,
+            average_needed_per_lesson=None,
+            skippable_lessons=None,
+            lessons_still_needed=None,
+            reason="No matching point scale exists.",
         )
 
-    if missing_points > available_projection_points:
-        shortage = missing_points - available_projection_points
+    target_scale = min(matching_scales, key=lambda point_scale: point_scale.percentage)
 
-        return (
-            "Not possible",
-            common_rows
-            + [
-                ("Missing raw points", f"{missing_points}"),
-                ("Available raw points", f"{available_projection_points}"),
-                ("Short by", f"{shortage} {plural(shortage, 'point')}"),
-            ],
+    required_raw_points = ceil(target_scale.percentage * total_raw_points)
+    missing_raw_points = max(0, required_raw_points - current_raw_points)
+
+    if missing_raw_points == 0:
+        return TargetCalculation(
+            status="reached",
+            target_grade_points=target_points,
+            required_percentage=target_scale.percentage,
+            required_raw_points=required_raw_points,
+            total_raw_points=total_raw_points,
+            current_raw_points=current_raw_points,
+            missing_raw_points=0,
+            remaining_lessons=remaining_lessons,
+            available_raw_points=available_raw_points,
+            average_needed_per_lesson=0,
+            skippable_lessons=remaining_lessons,
+            lessons_still_needed=0,
+            reason="Target already reached.",
         )
 
-    if missing_points == 0:
-        return (
-            "Lessons you can skip",
-            common_rows
-            + [
-                ("Remaining lessons", f"{remaining_lessons_count}"),
-                (
-                    "You may skip",
-                    f"{remaining_lessons_count} "
-                    f"{plural(remaining_lessons_count, 'lesson')}",
-                ),
-                ("Reason", "Target already reached"),
-            ],
+    if remaining_lessons == 0:
+        return TargetCalculation(
+            status="not_possible",
+            target_grade_points=target_points,
+            required_percentage=target_scale.percentage,
+            required_raw_points=required_raw_points,
+            total_raw_points=total_raw_points,
+            current_raw_points=current_raw_points,
+            missing_raw_points=missing_raw_points,
+            remaining_lessons=0,
+            available_raw_points=0,
+            average_needed_per_lesson=None,
+            skippable_lessons=0,
+            lessons_still_needed=None,
+            reason="No remaining lessons.",
         )
+
+    if missing_raw_points > available_raw_points:
+        shortage = missing_raw_points - available_raw_points
+
+        return TargetCalculation(
+            status="not_possible",
+            target_grade_points=target_points,
+            required_percentage=target_scale.percentage,
+            required_raw_points=required_raw_points,
+            total_raw_points=total_raw_points,
+            current_raw_points=current_raw_points,
+            missing_raw_points=missing_raw_points,
+            remaining_lessons=remaining_lessons,
+            available_raw_points=available_raw_points,
+            average_needed_per_lesson=None,
+            skippable_lessons=0,
+            lessons_still_needed=None,
+            reason="Not enough remaining raw points.",
+            shortage=shortage,
+        )
+
+    average_needed_per_lesson = ceil(missing_raw_points / remaining_lessons)
 
     skippable_lessons = sorted(
         projection_lessons,
@@ -256,76 +241,72 @@ def get_target_rows(
 
     for lesson in skippable_lessons:
         would_skip_points = skipped_points + lesson.max_points
-        points_left_after_skip = available_projection_points - would_skip_points
+        points_left_after_skip = available_raw_points - would_skip_points
 
-        if points_left_after_skip >= missing_points:
+        if points_left_after_skip >= missing_raw_points:
             skipped_points = would_skip_points
             skipped_lessons += 1
         else:
             break
 
-    lessons_needed = remaining_lessons_count - skipped_lessons
+    lessons_still_needed = remaining_lessons - skipped_lessons
 
-    return (
-        "Lessons you can skip",
-        common_rows
-        + [
-            ("Missing raw points", f"{missing_points}"),
-            ("Remaining lessons", f"{remaining_lessons_count}"),
-            ("Available raw points", f"{available_projection_points}"),
-            ("You may skip", f"{skipped_lessons} {plural(skipped_lessons, 'lesson')}"),
-            ("You still need", f"{lessons_needed} {plural(lessons_needed, 'lesson')}"),
-        ],
+    return TargetCalculation(
+        status="possible",
+        target_grade_points=target_points,
+        required_percentage=target_scale.percentage,
+        required_raw_points=required_raw_points,
+        total_raw_points=total_raw_points,
+        current_raw_points=current_raw_points,
+        missing_raw_points=missing_raw_points,
+        remaining_lessons=remaining_lessons,
+        available_raw_points=available_raw_points,
+        average_needed_per_lesson=average_needed_per_lesson,
+        skippable_lessons=skipped_lessons,
+        lessons_still_needed=lessons_still_needed,
     )
 
 
-def get_max_reachable_points_with_min_effort_rows(
+def calculate_max_reachable_with_min_effort(
     lessons: list[Lesson],
     scale: list[PointScale],
-) -> tuple[str, list[tuple[str, str]]]:
+) -> MaxEffortCalculation:
     projection_lessons = [lesson for lesson in lessons if lesson.projection]
 
-    total_max_points = sum(lesson.max_points for lesson in lessons)
+    total_raw_points = sum(lesson.max_points for lesson in lessons)
 
-    achieved_points = sum(
+    current_raw_points = sum(
         lesson.achieved_points for lesson in lessons if not lesson.projection
     )
 
-    available_projection_points = sum(
-        lesson.max_points for lesson in projection_lessons
-    )
+    available_raw_points = sum(lesson.max_points for lesson in projection_lessons)
 
-    max_possible_raw_points = achieved_points + available_projection_points
+    max_possible_raw_points = current_raw_points + available_raw_points
 
     reachable_scales = [
         point_scale
         for point_scale in scale
-        if max_possible_raw_points >= ceil(point_scale.percentage * total_max_points)
+        if max_possible_raw_points >= ceil(point_scale.percentage * total_raw_points)
     ]
 
     if not reachable_scales:
-        return (
-            "Max reachable points with minimum effort",
-            [
-                ("Max reachable grade points", "0"),
-                ("Current raw points", f"{achieved_points}/{total_max_points}"),
-                (
-                    "Max possible raw points",
-                    f"{max_possible_raw_points}/{total_max_points}",
-                ),
-                ("Minimum extra effort", "0 points"),
-                ("Lessons needed", "0 lessons"),
-                (
-                    "Lessons skippable",
-                    f"{len(projection_lessons)} {plural(len(projection_lessons), 'lesson')}",
-                ),
-            ],
+        return MaxEffortCalculation(
+            max_reachable_grade_points=0,
+            required_percentage=None,
+            required_raw_points=None,
+            total_raw_points=total_raw_points,
+            current_raw_points=current_raw_points,
+            missing_raw_points=0,
+            available_raw_points=available_raw_points,
+            minimum_extra_effort=0,
+            lessons_needed=0,
+            lessons_skippable=len(projection_lessons),
         )
 
-    best_scale = max(reachable_scales, key=lambda x: x.points)
+    best_scale = max(reachable_scales, key=lambda point_scale: point_scale.points)
 
-    required_points = ceil(best_scale.percentage * total_max_points)
-    missing_points = max(0, required_points - achieved_points)
+    required_raw_points = ceil(best_scale.percentage * total_raw_points)
+    missing_raw_points = max(0, required_raw_points - current_raw_points)
 
     lessons_by_effort = sorted(
         projection_lessons,
@@ -337,7 +318,7 @@ def get_max_reachable_points_with_min_effort_rows(
     gathered_points = 0
 
     for lesson in lessons_by_effort:
-        if gathered_points >= missing_points:
+        if gathered_points >= missing_raw_points:
             break
 
         gathered_points += lesson.max_points
@@ -345,69 +326,25 @@ def get_max_reachable_points_with_min_effort_rows(
 
     skippable_lessons = len(projection_lessons) - used_lessons
 
-    return (
-        "Max reachable points with minimum effort",
-        [
-            ("Max reachable grade points", format_grade_points(best_scale.points)),
-            ("Required percentage", format_percentage(best_scale.percentage)),
-            ("Required raw points", f"{required_points}/{total_max_points}"),
-            ("Current raw points", f"{achieved_points}/{total_max_points}"),
-            ("Missing raw points", f"{missing_points}"),
-            ("Available raw points", f"{available_projection_points}"),
-            (
-                "Minimum extra effort",
-                f"{missing_points} {plural(missing_points, 'point')}",
-            ),
-            ("Lessons needed", f"{used_lessons} {plural(used_lessons, 'lesson')}"),
-            (
-                "Lessons skippable",
-                f"{skippable_lessons} {plural(skippable_lessons, 'lesson')}",
-            ),
-        ],
+    return MaxEffortCalculation(
+        max_reachable_grade_points=best_scale.points,
+        required_percentage=best_scale.percentage,
+        required_raw_points=required_raw_points,
+        total_raw_points=total_raw_points,
+        current_raw_points=current_raw_points,
+        missing_raw_points=missing_raw_points,
+        available_raw_points=available_raw_points,
+        minimum_extra_effort=missing_raw_points,
+        lessons_needed=used_lessons,
+        lessons_skippable=skippable_lessons,
     )
-
-
-def calculate_max_reachable_points_with_min_effort(
-    lessons: list[Lesson],
-    scale: list[PointScale],
-) -> str:
-    title, rows = get_max_reachable_points_with_min_effort_rows(
-        lessons=lessons,
-        scale=scale,
-    )
-
-    return make_result_box(title, rows)
-
-
-def calculate_min_points_for_target(
-    lessons: list[Lesson],
-    scale: list[PointScale],
-    target_points: float,
-    distribute_points: bool = False,
-) -> str:
-    """
-    Calculate the minimum points needed from remaining lessons to reach a target point total.
-
-    If distribute_points is True, return the integer points needed per remaining lesson.
-    If distribute_points is False, return how many remaining lessons can be skipped.
-    If reaching the target is impossible, return "Not possible".
-    """
-
-    title, rows = get_target_rows(
-        lessons=lessons,
-        scale=scale,
-        target_points=target_points,
-        distribute_points=distribute_points,
-    )
-
-    return make_result_box(title, rows)
 
 
 def get_summary_rows(
     lessons: list[Lesson],
     scale: list[PointScale],
 ) -> list[tuple[str, str]]:
-    total_max_points = sum(lesson.max_points for lesson in lessons)
+    total_raw_points = sum(lesson.max_points for lesson in lessons)
 
     confirmed_points = sum(
         lesson.achieved_points for lesson in lessons if not lesson.projection
@@ -428,19 +365,19 @@ def get_summary_rows(
     )
 
     confirmed_percentage = (
-        confirmed_points / total_max_points if total_max_points > 0 else 0
+        confirmed_points / total_raw_points if total_raw_points > 0 else 0
     )
 
     projected_percentage = (
-        projected_points / total_max_points if total_max_points > 0 else 0
+        projected_points / total_raw_points if total_raw_points > 0 else 0
     )
 
     return [
-        ("Confirmed raw points", f"{confirmed_points}/{total_max_points}"),
+        ("Confirmed raw points", f"{confirmed_points}/{total_raw_points}"),
         ("Confirmed percentage", format_percentage(confirmed_percentage)),
         ("Confirmed grade points", format_grade_points(confirmed_grade_points)),
         ("", ""),
-        ("Projected raw points", f"{projected_points}/{total_max_points}"),
+        ("Projected raw points", f"{projected_points}/{total_raw_points}"),
         ("Projected percentage", format_percentage(projected_percentage)),
         ("Projected grade points", format_grade_points(projected_grade_points)),
     ]
@@ -456,14 +393,17 @@ def print_lessons(lessons: list[Lesson]) -> None:
     for index, lesson in enumerate(lessons, start=1):
         status = "Projection" if lesson.projection else "Completed"
 
-        if lesson.max_points == 0:
-            progress = "0%"
-        else:
-            progress = format_percentage(lesson.achieved_points / lesson.max_points)
+        progress = (
+            "0%"
+            if lesson.max_points == 0
+            else format_percentage(lesson.achieved_points / lesson.max_points)
+        )
+
+        status_style = "cyan" if lesson.projection else "green"
 
         table.add_row(
             str(index),
-            status,
+            f"[{status_style}]{status}[/{status_style}]",
             f"{lesson.achieved_points}/{lesson.max_points}",
             progress,
         )
@@ -480,7 +420,7 @@ def print_scale(scale: list[PointScale]) -> None:
 
     table.add_row(f"< {format_percentage(min_percentage)}", "0", style="red")
 
-    for point_scale in sorted(scale, key=lambda x: x.percentage):
+    for point_scale in sorted(scale, key=lambda point_scale: point_scale.percentage):
         table.add_row(
             format_percentage(point_scale.percentage),
             format_grade_points(point_scale.points),
@@ -503,6 +443,181 @@ def print_summary(lessons: list[Lesson], scale: list[PointScale]) -> None:
             title="Summary",
             border_style="green",
         )
+    )
+
+
+def render_target_calculation(calculation: TargetCalculation) -> Panel:
+    status_text = {
+        "possible": "[green]Possible[/green]",
+        "reached": "[green]Target already reached[/green]",
+        "not_possible": "[red]Not possible[/red]",
+    }.get(calculation.status, calculation.status)
+
+    requirement = Table.grid(padding=(0, 2))
+    requirement.add_column(style="bold")
+    requirement.add_column(justify="right")
+
+    requirement.add_row("Status", status_text)
+    requirement.add_row(
+        "Target",
+        f"{format_grade_points(calculation.target_grade_points)} grade points",
+    )
+
+    if (
+        calculation.required_percentage is not None
+        and calculation.required_raw_points is not None
+    ):
+        requirement.add_row(
+            "Requirement",
+            f"{format_percentage(calculation.required_percentage)} → "
+            f"{calculation.required_raw_points}/{calculation.total_raw_points} raw points",
+        )
+
+    requirement.add_row(
+        "Current",
+        f"{calculation.current_raw_points}/{calculation.total_raw_points} raw points",
+    )
+
+    requirement.add_row(
+        "Missing",
+        f"{calculation.missing_raw_points} "
+        f"{plural(calculation.missing_raw_points, 'point')}",
+    )
+
+    if calculation.status == "not_possible":
+        reason = calculation.reason or "Unknown reason."
+
+        if calculation.shortage is not None:
+            reason += (
+                f" Short by {calculation.shortage} "
+                f"{plural(calculation.shortage, 'point')}."
+            )
+
+        body = Group(
+            requirement,
+            Text(""),
+            Text("Result", style="bold red"),
+            Text(reason, style="red"),
+        )
+
+        return Panel(
+            body,
+            title="Target Calculation",
+            border_style="red",
+        )
+
+    average_needed = (
+        calculation.average_needed_per_lesson
+        if calculation.average_needed_per_lesson is not None
+        else 0
+    )
+
+    skippable_lessons = (
+        calculation.skippable_lessons
+        if calculation.skippable_lessons is not None
+        else 0
+    )
+
+    lessons_still_needed = (
+        calculation.lessons_still_needed
+        if calculation.lessons_still_needed is not None
+        else 0
+    )
+
+    average_section = Text()
+    average_section.append("Average needed\n", style="bold")
+    average_section.append(
+        f"{average_needed} {plural(average_needed, 'point')} " f"per remaining lesson\n"
+    )
+    average_section.append(
+        f"across {calculation.remaining_lessons} "
+        f"{plural(calculation.remaining_lessons, 'lesson')}"
+    )
+
+    skip_section = Text()
+    skip_section.append("Skippable lessons\n", style="bold")
+    skip_section.append(
+        f"You may skip {skippable_lessons} " f"{plural(skippable_lessons, 'lesson')}\n"
+    )
+    skip_section.append(
+        f"You still need to complete {lessons_still_needed} "
+        f"{plural(lessons_still_needed, 'lesson')}"
+    )
+
+    body = Group(
+        requirement,
+        Text(""),
+        Panel(average_section, border_style="blue"),
+        Panel(skip_section, border_style="cyan"),
+    )
+
+    return Panel(
+        body,
+        title="Target Calculation",
+        border_style="blue",
+    )
+
+
+def render_max_effort_calculation(calculation: MaxEffortCalculation) -> Panel:
+    overview = Table.grid(padding=(0, 2))
+    overview.add_column(style="bold")
+    overview.add_column(justify="right")
+
+    overview.add_row(
+        "Best reachable",
+        f"{format_grade_points(calculation.max_reachable_grade_points)} grade points",
+    )
+
+    if (
+        calculation.required_percentage is not None
+        and calculation.required_raw_points is not None
+    ):
+        overview.add_row(
+            "Requirement",
+            f"{format_percentage(calculation.required_percentage)} → "
+            f"{calculation.required_raw_points}/{calculation.total_raw_points} raw points",
+        )
+
+    overview.add_row(
+        "Current",
+        f"{calculation.current_raw_points}/{calculation.total_raw_points} raw points",
+    )
+
+    overview.add_row(
+        "Missing",
+        f"{calculation.missing_raw_points} "
+        f"{plural(calculation.missing_raw_points, 'point')}",
+    )
+
+    effort_section = Text()
+    effort_section.append("Minimum effort\n", style="bold")
+    effort_section.append(
+        f"Earn {calculation.minimum_extra_effort} "
+        f"{plural(calculation.minimum_extra_effort, 'point')}\n"
+    )
+    effort_section.append(
+        f"Complete {calculation.lessons_needed} "
+        f"{plural(calculation.lessons_needed, 'lesson')}"
+    )
+
+    skip_section = Text()
+    skip_section.append("Still skippable\n", style="bold")
+    skip_section.append(
+        f"{calculation.lessons_skippable} "
+        f"{plural(calculation.lessons_skippable, 'lesson')}"
+    )
+
+    body = Group(
+        overview,
+        Text(""),
+        Panel(effort_section, border_style="magenta"),
+        Panel(skip_section, border_style="cyan"),
+    )
+
+    return Panel(
+        body,
+        title="Max Reachable With Minimum Effort",
+        border_style="magenta",
     )
 
 
@@ -532,6 +647,245 @@ def add_missing_projection_lessons(
                 projection=True,
             )
         )
+
+
+def create_pdf_key_value_table(rows: list[tuple[str, str]]):
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.platypus import Table as PdfTable
+    from reportlab.platypus import TableStyle
+
+    cleaned_rows = [[label, value] for label, value in rows if label or value]
+
+    table = PdfTable(
+        cleaned_rows,
+        colWidths=[6.0 * cm, 7.0 * cm],
+        hAlign="LEFT",
+    )
+
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f3f4f6")),
+                ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#111827")),
+                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                ("FONTNAME", (1, 0), (1, -1), "Helvetica"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#d1d5db")),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
+
+    return table
+
+
+def create_pdf_info_card(
+    title: str,
+    lines: list[str],
+    border_color: str = "#2563eb",
+):
+    from reportlab.lib import colors
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import cm
+    from reportlab.platypus import Paragraph, Table as PdfTable, TableStyle
+
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle(
+        "CardTitle",
+        parent=styles["Heading3"],
+        fontName="Helvetica-Bold",
+        fontSize=11,
+        leading=14,
+        textColor=colors.HexColor("#111827"),
+        spaceAfter=4,
+    )
+
+    body_style = ParagraphStyle(
+        "CardBody",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=9,
+        leading=12,
+        textColor=colors.HexColor("#374151"),
+    )
+
+    content = [
+        Paragraph(title, title_style),
+        *[Paragraph(line, body_style) for line in lines],
+    ]
+
+    table = PdfTable(
+        [[content]],
+        colWidths=[13.2 * cm],
+        hAlign="LEFT",
+    )
+
+    table.setStyle(
+        TableStyle(
+            [
+                ("BOX", (0, 0), (-1, -1), 1.0, colors.HexColor(border_color)),
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f9fafb")),
+                ("TOPPADDING", (0, 0), (-1, -1), 9),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
+                ("LEFTPADDING", (0, 0), (-1, -1), 9),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 9),
+            ]
+        )
+    )
+
+    return table
+
+
+def target_calculation_pdf_elements(calculation: TargetCalculation) -> list:
+    from reportlab.platypus import Spacer
+
+    elements = []
+
+    if calculation.status == "not_possible":
+        lines = [
+            f"Target: {format_grade_points(calculation.target_grade_points)} grade points",
+            f"Current: {calculation.current_raw_points}/{calculation.total_raw_points} raw points",
+            f"Missing: {calculation.missing_raw_points} raw points",
+        ]
+
+        if (
+            calculation.required_percentage is not None
+            and calculation.required_raw_points is not None
+        ):
+            lines.insert(
+                1,
+                f"Requirement: {format_percentage(calculation.required_percentage)} "
+                f"→ {calculation.required_raw_points}/{calculation.total_raw_points} raw points",
+            )
+
+        if calculation.reason:
+            lines.append(f"Reason: {calculation.reason}")
+
+        if calculation.shortage is not None:
+            lines.append(f"Short by: {calculation.shortage} raw points")
+
+        elements.append(
+            create_pdf_info_card(
+                "Target Calculation — Not possible",
+                lines,
+                border_color="#dc2626",
+            )
+        )
+
+        return elements
+
+    average_needed = calculation.average_needed_per_lesson or 0
+    skippable_lessons = calculation.skippable_lessons or 0
+    lessons_still_needed = calculation.lessons_still_needed or 0
+
+    elements.append(
+        create_pdf_info_card(
+            "Target Calculation",
+            [
+                f"Status: {'Target already reached' if calculation.status == 'reached' else 'Possible'}",
+                f"Target: {format_grade_points(calculation.target_grade_points)} grade points",
+                f"Requirement: {format_percentage(calculation.required_percentage or 0)} "
+                f"→ {calculation.required_raw_points}/{calculation.total_raw_points} raw points",
+                f"Current: {calculation.current_raw_points}/{calculation.total_raw_points} raw points",
+                f"Missing: {calculation.missing_raw_points} raw points",
+            ],
+            border_color="#2563eb",
+        )
+    )
+
+    elements.append(Spacer(1, 8))
+
+    elements.append(
+        create_pdf_info_card(
+            "Average needed",
+            [
+                f"{average_needed} {plural(average_needed, 'point')} per remaining lesson",
+                f"Across {calculation.remaining_lessons} "
+                f"{plural(calculation.remaining_lessons, 'lesson')}",
+            ],
+            border_color="#2563eb",
+        )
+    )
+
+    elements.append(Spacer(1, 8))
+
+    elements.append(
+        create_pdf_info_card(
+            "Skippable lessons",
+            [
+                f"You may skip {skippable_lessons} {plural(skippable_lessons, 'lesson')}",
+                f"You still need to complete {lessons_still_needed} "
+                f"{plural(lessons_still_needed, 'lesson')}",
+            ],
+            border_color="#0891b2",
+        )
+    )
+
+    return elements
+
+
+def max_effort_pdf_elements(calculation: MaxEffortCalculation) -> list:
+    from reportlab.platypus import Spacer
+
+    elements = []
+
+    overview_lines = [
+        f"Best reachable: {format_grade_points(calculation.max_reachable_grade_points)} grade points",
+        f"Current: {calculation.current_raw_points}/{calculation.total_raw_points} raw points",
+        f"Missing: {calculation.missing_raw_points} raw points",
+        f"Available remaining raw points: {calculation.available_raw_points}",
+    ]
+
+    if (
+        calculation.required_percentage is not None
+        and calculation.required_raw_points is not None
+    ):
+        overview_lines.insert(
+            1,
+            f"Requirement: {format_percentage(calculation.required_percentage)} "
+            f"→ {calculation.required_raw_points}/{calculation.total_raw_points} raw points",
+        )
+
+    elements.append(
+        create_pdf_info_card(
+            "Max Reachable With Minimum Effort",
+            overview_lines,
+            border_color="#c026d3",
+        )
+    )
+
+    elements.append(Spacer(1, 8))
+
+    elements.append(
+        create_pdf_info_card(
+            "Minimum effort",
+            [
+                f"Earn {calculation.minimum_extra_effort} "
+                f"{plural(calculation.minimum_extra_effort, 'point')}",
+                f"Complete {calculation.lessons_needed} "
+                f"{plural(calculation.lessons_needed, 'lesson')}",
+            ],
+            border_color="#c026d3",
+        )
+    )
+
+    elements.append(Spacer(1, 8))
+
+    elements.append(
+        create_pdf_info_card(
+            "Still skippable",
+            [
+                f"{calculation.lessons_skippable} "
+                f"{plural(calculation.lessons_skippable, 'lesson')}",
+            ],
+            border_color="#0891b2",
+        )
+    )
+
+    return elements
 
 
 def create_pdf_report(
@@ -670,7 +1024,7 @@ def create_pdf_report(
     story.append(Spacer(1, 10))
     story.append(Paragraph("Point Scale", section_style))
 
-    sorted_scale = sorted(scale, key=lambda x: x.percentage)
+    sorted_scale = sorted(scale, key=lambda point_scale: point_scale.percentage)
     min_percentage = min(point_scale.percentage for point_scale in sorted_scale)
 
     scale_data = [["Required", "Grade points"]]
@@ -715,77 +1069,27 @@ def create_pdf_report(
     story.append(scale_table)
 
     story.append(Spacer(1, 10))
-    story.append(Paragraph("Target Calculation: Distributed", section_style))
+    story.append(Paragraph("Target Calculation", section_style))
 
-    distributed_title, distributed_rows = get_target_rows(
+    target_calculation = calculate_target(
         lessons=lessons,
         scale=scale,
         target_points=target_points,
-        distribute_points=True,
     )
 
-    story.append(Paragraph(distributed_title, styles["Heading3"]))
-    story.append(create_pdf_key_value_table(distributed_rows))
+    story.extend(target_calculation_pdf_elements(target_calculation))
 
-    story.append(Spacer(1, 8))
-    story.append(Paragraph("Target Calculation: Skippable Lessons", section_style))
-
-    skippable_title, skippable_rows = get_target_rows(
-        lessons=lessons,
-        scale=scale,
-        target_points=target_points,
-        distribute_points=False,
-    )
-
-    story.append(Paragraph(skippable_title, styles["Heading3"]))
-    story.append(create_pdf_key_value_table(skippable_rows))
-
-    story.append(Spacer(1, 8))
+    story.append(Spacer(1, 10))
     story.append(Paragraph("Max Reachable With Minimum Effort", section_style))
 
-    max_reachable_title, max_reachable_rows = (
-        get_max_reachable_points_with_min_effort_rows(
-            lessons=lessons,
-            scale=scale,
-        )
+    max_effort_calculation = calculate_max_reachable_with_min_effort(
+        lessons=lessons,
+        scale=scale,
     )
 
-    story.append(Paragraph(max_reachable_title, styles["Heading3"]))
-    story.append(create_pdf_key_value_table(max_reachable_rows))
+    story.extend(max_effort_pdf_elements(max_effort_calculation))
 
     doc.build(story)
-
-
-def create_pdf_key_value_table(rows: list[tuple[str, str]]):
-    from reportlab.lib import colors
-    from reportlab.lib.units import cm
-    from reportlab.platypus import Table as PdfTable
-    from reportlab.platypus import TableStyle
-
-    cleaned_rows = [[label, value] for label, value in rows if label or value]
-
-    table = PdfTable(
-        cleaned_rows,
-        colWidths=[6.0 * cm, 7.0 * cm],
-        hAlign="LEFT",
-    )
-
-    table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f3f4f6")),
-                ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#111827")),
-                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                ("FONTNAME", (1, 0), (1, -1), "Helvetica"),
-                ("FONTSIZE", (0, 0), (-1, -1), 9),
-                ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#d1d5db")),
-                ("TOPPADDING", (0, 0), (-1, -1), 6),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-            ]
-        )
-    )
-
-    return table
 
 
 if __name__ == "__main__":
@@ -799,6 +1103,17 @@ if __name__ == "__main__":
 
     target_points = 1
 
+    target_calculation = calculate_target(
+        LESSONS,
+        scale,
+        target_points,
+    )
+
+    max_effort_calculation = calculate_max_reachable_with_min_effort(
+        LESSONS,
+        scale,
+    )
+
     console.print()
     print_lessons(LESSONS)
 
@@ -809,44 +1124,12 @@ if __name__ == "__main__":
     print_summary(LESSONS, scale)
 
     console.print()
-    console.print(
-        Panel(
-            calculate_min_points_for_target(
-                LESSONS,
-                scale,
-                target_points,
-                distribute_points=True,
-            ),
-            title="Target Calculation: Distributed",
-            border_style="blue",
-        )
-    )
+    console.print(render_target_calculation(target_calculation))
 
     console.print()
-    console.print(
-        Panel(
-            calculate_min_points_for_target(
-                LESSONS,
-                scale,
-                target_points,
-                distribute_points=False,
-            ),
-            title="Target Calculation: Skippable Lessons",
-            border_style="cyan",
-        )
-    )
+    console.print(render_max_effort_calculation(max_effort_calculation))
 
     console.print()
-    console.print(
-        Panel(
-            calculate_max_reachable_points_with_min_effort(
-                LESSONS,
-                scale,
-            ),
-            title="Max Reachable With Min Effort",
-            border_style="magenta",
-        )
-    )
 
     wants_pdf = Confirm.ask("Create a PDF report?", default=False)
 
