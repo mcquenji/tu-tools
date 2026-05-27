@@ -219,3 +219,7 @@ __marimo__/
 
 # outputs
 *.pdf
+outputs/*
+!outputs/.gitkeep
+data/*
+!data/.gitkeep

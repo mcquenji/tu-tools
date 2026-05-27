@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "schema.json",
+  "title": "UE Lessons Courses Configuration",
+  "description": "Course definitions used by the ue-lessons report command.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "courses"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Path or URI of this JSON Schema, used by editors for validation and completions."
+    },
+    "courses": {
+      "type": "array",
+      "description": "Courses to include in console output and the generated PDF report. Leave empty until a course has been configured.",
+      "items": {
+        "$ref": "#/$defs/course"
+      }
+    }
+  },
+  "$defs": {
+    "course": {
+      "title": "Course",
+      "description": "One course whose exercise lessons contribute raw points toward a grade-point scale.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "scale",
+        "lessons"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Display name printed in reports and listed in the PDF table of contents."
+        },
+        "target_points": {
+          "type": "number",
+          "default": 1,
+          "description": "Grade points to evaluate in the target calculation. Defaults to 1 when omitted."
+        },
+        "scale": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Thresholds translating achieved raw-point percentages into grade points.",
+          "items": {
+            "$ref": "#/$defs/pointScale"
+          }
+        },
+        "lessons": {
+          "type": "array",
+          "description": "Completed and projected lessons contributing raw points for this course.",
+          "items": {
+            "$ref": "#/$defs/lesson"
+          }
+        }
+      }
+    },
+    "pointScale": {
+      "title": "Point Scale Threshold",
+      "description": "A minimum achieved percentage and the grade points awarded at that threshold.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "percentage",
+        "points"
+      ],
+      "properties": {
+        "percentage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Minimum portion of raw points required, expressed between 0 and 1; for example, 0.6 means 60%."
+        },
+        "points": {
+          "type": "number",
+          "description": "Grade points awarded when the required percentage is achieved."
+        }
+      }
+    },
+    "lesson": {
+      "title": "Lesson",
+      "description": "A single exercise lesson with available and achieved raw points.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_points",
+        "achieved_points"
+      ],
+      "properties": {
+        "max_points": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum raw points available in the lesson."
+        },
+        "achieved_points": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Raw points achieved or expected for a projected lesson. It must not exceed max_points."
+        },
+        "projection": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether the lesson is a future estimate rather than a confirmed result. Defaults to false."
+        }
+      }
+    }
+  }
+}
