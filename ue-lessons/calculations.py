@@ -124,7 +124,10 @@ def calculate_target(course: Course) -> TargetCalculation:
     skipped_points = 0
     skipped_lessons = 0
     for lesson in sorted(projection_lessons, key=lambda lesson: lesson.max_points):
-        if available_raw_points - skipped_points - lesson.max_points >= missing_raw_points:
+        if (
+            available_raw_points - skipped_points - lesson.max_points
+            >= missing_raw_points
+        ):
             skipped_points += lesson.max_points
             skipped_lessons += 1
         else:
@@ -236,7 +239,10 @@ def get_summary_rows(course: Course) -> list[tuple[str, str]]:
     return [
         ("Confirmed raw points", f"{confirmed}/{total}"),
         ("Confirmed percentage", format_percentage(confirmed / total if total else 0)),
-        ("Confirmed grade points", format_grade_points(calculate_points(course, False))),
+        (
+            "Confirmed grade points",
+            format_grade_points(calculate_points(course, False)),
+        ),
         ("Projected raw points", f"{projected}/{total}"),
         ("Projected percentage", format_percentage(projected / total if total else 0)),
         ("Projected grade points", format_grade_points(calculate_points(course))),

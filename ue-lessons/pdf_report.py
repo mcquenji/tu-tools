@@ -72,6 +72,7 @@ def create_pdf_report(
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import cm
+        from reportlab.graphics.shapes import Circle, Drawing, Line
         from reportlab.platypus import (
             BaseDocTemplate,
             Frame,
@@ -198,9 +199,7 @@ def create_pdf_report(
         def afterFlowable(self, flowable) -> None:
             if not isinstance(flowable, Paragraph):
                 return
-            level = {"course_heading": 0, "section_heading": 1}.get(
-                flowable.style.name
-            )
+            level = {"course_heading": 0, "section_heading": 1}.get(flowable.style.name)
             if level is None:
                 return
             text = flowable.getPlainText()
@@ -221,12 +220,15 @@ def create_pdf_report(
         canvas.drawRightString(A4[0] - doc.rightMargin, 0.78 * cm, f"Page {doc.page}")
         canvas.restoreState()
 
-    def kpi_card(label: str, value: str, note: str, background: str) -> Table:
+    def kpi_card(label: str, value: str, note: object, background: str) -> Table:
+        note_flowable = (
+            paragraph(note, card_note_style) if isinstance(note, str) else note
+        )
         table = Table(
             [
                 [paragraph(label.upper(), card_label_style)],
                 [paragraph(value, card_value_style)],
-                [paragraph(note, card_note_style)],
+                [note_flowable],
             ],
             colWidths=[4.1 * cm],
         )
@@ -240,6 +242,41 @@ def create_pdf_report(
                     ("TOPPADDING", (0, 0), (-1, 0), 8),
                     ("TOPPADDING", (0, 1), (-1, 1), 1),
                     ("BOTTOMPADDING", (0, 2), (-1, 2), 8),
+                ]
+            )
+        )
+        return table
+
+    def shrug_seven_note() -> Table:
+        icon = Drawing(13, 11)
+        ink = color(theme.muted)
+        face = color("#facc15")
+        icon.add(Circle(7, 7, 3.3, fillColor=face, strokeColor=ink, strokeWidth=0.45))
+        icon.add(Circle(5.9, 7.6, 0.35, fillColor=ink, strokeColor=None))
+        icon.add(Circle(8.1, 7.6, 0.35, fillColor=ink, strokeColor=None))
+        icon.add(Line(6.1, 6.2, 7.9, 6.2, strokeColor=ink, strokeWidth=0.45))
+        icon.add(Line(4, 4.6, 1.4, 6.1, strokeColor=ink, strokeWidth=0.7))
+        icon.add(Line(1.4, 6.1, 0.3, 5.3, strokeColor=ink, strokeWidth=0.7))
+        icon.add(Line(10, 4.6, 12.2, 6.1, strokeColor=ink, strokeWidth=0.7))
+        icon.add(Line(12.2, 6.1, 13, 5.3, strokeColor=ink, strokeWidth=0.7))
+        table = Table(
+            [
+                [
+                    Paragraph("67%&nbsp;&nbsp;<super>6</super>", card_note_style),
+                    icon,
+                    Paragraph("<super>7</super>", card_note_style),
+                ]
+            ],
+            colWidths=[1.12 * cm, 13, 0.25 * cm],
+        )
+        table.setStyle(
+            TableStyle(
+                [
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ]
             )
         )
@@ -381,16 +418,23 @@ def create_pdf_report(
         hero = Table(
             [
                 [
-                    paragraph(target.status.replace("_", " ").upper(), card_label_style),
+                    paragraph(
+                        target.status.replace("_", " ").upper(), card_label_style
+                    ),
                     paragraph("LESSONS YOU MAY SKIP", card_label_style),
                 ],
-                [paragraph(headline, callout_style), paragraph(skip_value, callout_style)],
+                [
+                    paragraph(headline, callout_style),
+                    paragraph(skip_value, callout_style),
+                ],
                 [
                     paragraph(
                         f"Target: {format_grade_points(target.target_grade_points)} grade points",
                         card_note_style,
                     ),
-                    paragraph("Based on remaining maximum point capacity", card_note_style),
+                    paragraph(
+                        "Based on remaining maximum point capacity", card_note_style
+                    ),
                 ],
             ],
             colWidths=[10.7 * cm, 6.1 * cm],
@@ -417,21 +461,28 @@ def create_pdf_report(
         )
         rows = [
             ("Requirement", requirement),
-            ("Confirmed raw points", f"{target.current_raw_points}/{target.total_raw_points}"),
+            (
+                "Confirmed raw points",
+                f"{target.current_raw_points}/{target.total_raw_points}",
+            ),
             ("Missing raw points", str(target.missing_raw_points)),
             ("Remaining lessons", str(target.remaining_lessons)),
             ("Available remaining raw points", str(target.available_raw_points)),
             (
                 "Average needed per remaining lesson",
-                str(target.average_needed_per_lesson)
-                if target.average_needed_per_lesson is not None
-                else "Not applicable",
+                (
+                    str(target.average_needed_per_lesson)
+                    if target.average_needed_per_lesson is not None
+                    else "Not applicable"
+                ),
             ),
             (
                 "Lessons still needed",
-                str(target.lessons_still_needed)
-                if target.lessons_still_needed is not None
-                else "Not applicable",
+                (
+                    str(target.lessons_still_needed)
+                    if target.lessons_still_needed is not None
+                    else "Not applicable"
+                ),
             ),
             ("Lessons you may skip", skip_value),
         ]
@@ -475,7 +526,9 @@ def create_pdf_report(
         bottomMargin=1.55 * cm,
     )
     frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id="body")
-    doc.addPageTemplates([PageTemplate(id="report", frames=[frame], onPage=page_footer)])
+    doc.addPageTemplates(
+        [PageTemplate(id="report", frames=[frame], onPage=page_footer)]
+    )
 
     story = [
         paragraph(f"UE LESSONS / {theme.name.upper()} REPORT", eyebrow_style),
@@ -521,7 +574,25 @@ def create_pdf_report(
                             kpi_card(
                                 "Projected score",
                                 f"{projected}/{total}",
-                                format_percentage(projected / total if total else 0),
+                                (
+                                    shrug_seven_note()
+                                    if theme.name == "Vivid"
+                                    and format_percentage(
+                                        projected / total if total else 0
+                                    )
+                                    == "67%"
+                                    else (
+                                        "69% (nice)"
+                                        if theme.name == "Vivid"
+                                        and format_percentage(
+                                            projected / total if total else 0
+                                        )
+                                        == "69%"
+                                        else format_percentage(
+                                            projected / total if total else 0
+                                        )
+                                    )
+                                ),
                                 theme.projected_row,
                             ),
                             kpi_card(
