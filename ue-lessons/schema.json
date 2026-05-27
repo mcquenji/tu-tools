@@ -29,7 +29,7 @@
       "additionalProperties": false,
       "required": [
         "name",
-        "scale",
+        "grade_scale",
         "lessons"
       ],
       "properties": {
@@ -38,45 +38,99 @@
           "minLength": 1,
           "description": "Display name printed in reports and listed in the PDF table of contents."
         },
-        "target_points": {
+        "target_grade_points": {
           "type": "number",
           "default": 1,
           "description": "Grade points to evaluate in the target calculation. Defaults to 1 when omitted."
         },
-        "scale": {
+        "schedule": {
+          "$ref": "#/$defs/schedule"
+        },
+        "grade_scale": {
           "type": "array",
           "minItems": 1,
           "description": "Thresholds translating achieved raw-point percentages into grade points.",
           "items": {
-            "$ref": "#/$defs/pointScale"
+            "$ref": "#/$defs/gradeThreshold"
           }
         },
         "lessons": {
           "type": "array",
-          "description": "Completed and projected lessons contributing raw points for this course.",
+          "description": "Lessons in chronological order. Missing trailing lessons are automatically added as full-score projections using schedule, or the default twelve-lesson schedule when schedule is omitted.",
           "items": {
             "$ref": "#/$defs/lesson"
           }
         }
       }
     },
-    "pointScale": {
-      "title": "Point Scale Threshold",
+    "schedule": {
+      "title": "Automatic Lesson Schedule",
+      "description": "Optional lesson schedule used to validate configured maxima and create missing trailing lessons as full-score projections. When omitted, the default is 12 lessons worth 6 points each except lessons 6 and 11, which are worth 2 points.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lesson_count",
+        "default_max_points"
+      ],
+      "properties": {
+        "lesson_count": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Total number of lessons in this course after automatic projections are added."
+        },
+        "default_max_points": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Default maximum raw points for each lesson unless overridden by a point override."
+        },
+        "point_overrides": {
+          "type": "array",
+          "description": "Optional point overrides for numbered lessons whose maximum differs from the default.",
+          "items": {
+            "$ref": "#/$defs/schedulePointOverride"
+          }
+        }
+      }
+    },
+    "schedulePointOverride": {
+      "title": "Schedule Point Override",
+      "description": "An override for the maximum raw points of a particular scheduled lesson.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lesson_number",
+        "max_points"
+      ],
+      "properties": {
+        "lesson_number": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "One-based lesson number to override; it must not exceed schedule.lesson_count."
+        },
+        "max_points": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum raw points available for this lesson instead of schedule.default_max_points."
+        }
+      }
+    },
+    "gradeThreshold": {
+      "title": "Grade Scale Threshold",
       "description": "A minimum achieved percentage and the grade points awarded at that threshold.",
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "percentage",
-        "points"
+        "minimum_percentage",
+        "grade_points"
       ],
       "properties": {
-        "percentage": {
+        "minimum_percentage": {
           "type": "number",
           "minimum": 0,
           "maximum": 1,
           "description": "Minimum portion of raw points required, expressed between 0 and 1; for example, 0.6 means 60%."
         },
-        "points": {
+        "grade_points": {
           "type": "number",
           "description": "Grade points awarded when the required percentage is achieved."
         }
@@ -89,7 +143,7 @@
       "additionalProperties": false,
       "required": [
         "max_points",
-        "achieved_points"
+        "earned_points"
       ],
       "properties": {
         "max_points": {
@@ -97,12 +151,12 @@
           "minimum": 0,
           "description": "Maximum raw points available in the lesson."
         },
-        "achieved_points": {
+        "earned_points": {
           "type": "integer",
           "minimum": 0,
-          "description": "Raw points achieved or expected for a projected lesson. It must not exceed max_points."
+          "description": "Raw points earned or expected for a projected lesson. It must not exceed max_points."
         },
-        "projection": {
+        "projected": {
           "type": "boolean",
           "default": false,
           "description": "Whether the lesson is a future estimate rather than a confirmed result. Defaults to false."

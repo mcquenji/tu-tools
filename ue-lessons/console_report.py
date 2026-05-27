@@ -23,17 +23,17 @@ def print_course(console: Console, course: Course) -> None:
     lessons.add_column("Raw points", justify="right")
     lessons.add_column("Progress", justify="right")
     for index, lesson in enumerate(course.lessons, start=1):
-        status = "Projection" if lesson.projection else "Completed"
-        style = "cyan" if lesson.projection else "green"
+        status = "Projection" if lesson.projected else "Completed"
+        style = "cyan" if lesson.projected else "green"
         progress = (
-            format_percentage(lesson.achieved_points / lesson.max_points)
+            format_percentage(lesson.earned_points / lesson.max_points)
             if lesson.max_points
             else "0%"
         )
         lessons.add_row(
             str(index),
             f"[{style}]{status}[/{style}]",
-            f"{lesson.achieved_points}/{lesson.max_points}",
+            f"{lesson.earned_points}/{lesson.max_points}",
             progress,
         )
     console.print(lessons)
@@ -41,12 +41,16 @@ def print_course(console: Console, course: Course) -> None:
     scale = Table(title="Point Scale", show_header=True, header_style="bold")
     scale.add_column("Required", justify="right")
     scale.add_column("Grade points", justify="right")
-    minimum = min(point_scale.percentage for point_scale in course.scale)
+    minimum = min(
+        point_scale.minimum_percentage for point_scale in course.grade_scale
+    )
     scale.add_row(f"< {format_percentage(minimum)}", "0", style="red")
-    for point_scale in sorted(course.scale, key=lambda point_scale: point_scale.percentage):
+    for point_scale in sorted(
+        course.grade_scale, key=lambda point_scale: point_scale.minimum_percentage
+    ):
         scale.add_row(
-            format_percentage(point_scale.percentage),
-            format_grade_points(point_scale.points),
+            format_percentage(point_scale.minimum_percentage),
+            format_grade_points(point_scale.grade_points),
         )
     console.print(scale)
 

@@ -23,21 +23,23 @@ def plural(value: int, singular: str, plural_form: str | None = None) -> str:
 
 
 def calculate_points(course: Course, include_projections: bool = True) -> float:
-    relevant_lessons = [
-        lesson
-        for lesson in course.lessons
-        if include_projections or not lesson.projection
-    ]
-    total = sum(lesson.max_points for lesson in relevant_lessons)
+    total = sum(lesson.max_points for lesson in course.lessons)
     if total == 0:
         return 0
 
-    percentage = sum(lesson.achieved_points for lesson in relevant_lessons) / total
+    achieved = sum(
+        lesson.earned_points
+        for lesson in course.lessons
+        if include_projections or not lesson.projected
+    )
+    percentage = achieved / total
     for point_scale in sorted(
-        course.scale, key=lambda point_scale: point_scale.percentage, reverse=True
+        course.grade_scale,
+        key=lambda point_scale: point_scale.minimum_percentage,
+        reverse=True,
     ):
-        if percentage >= point_scale.percentage:
-            return point_scale.points
+        if percentage >= point_scale.minimum_percentage:
+            return point_scale.grade_points
     return 0
 
 
@@ -45,18 +47,18 @@ def calculate_target(course: Course) -> TargetCalculation:
     lessons = course.lessons
     matching_scales = [
         point_scale
-        for point_scale in course.scale
-        if point_scale.points >= course.target_points
+        for point_scale in course.grade_scale
+        if point_scale.grade_points >= course.target_grade_points
     ]
     total_raw_points = sum(lesson.max_points for lesson in lessons)
     current_raw_points = sum(
-        lesson.achieved_points for lesson in lessons if not lesson.projection
+        lesson.earned_points for lesson in lessons if not lesson.projected
     )
-    projection_lessons = [lesson for lesson in lessons if lesson.projection]
+    projection_lessons = [lesson for lesson in lessons if lesson.projected]
     remaining_lessons = len(projection_lessons)
     available_raw_points = sum(lesson.max_points for lesson in projection_lessons)
     common = {
-        "target_grade_points": course.target_points,
+        "target_grade_points": course.target_grade_points,
         "total_raw_points": total_raw_points,
         "current_raw_points": current_raw_points,
         "remaining_lessons": remaining_lessons,
@@ -76,11 +78,13 @@ def calculate_target(course: Course) -> TargetCalculation:
             **common,
         )
 
-    target_scale = min(matching_scales, key=lambda point_scale: point_scale.percentage)
-    required_raw_points = ceil(target_scale.percentage * total_raw_points)
+    target_scale = min(
+        matching_scales, key=lambda point_scale: point_scale.minimum_percentage
+    )
+    required_raw_points = ceil(target_scale.minimum_percentage * total_raw_points)
     missing_raw_points = max(0, required_raw_points - current_raw_points)
     required = {
-        "required_percentage": target_scale.percentage,
+        "required_percentage": target_scale.minimum_percentage,
         "required_raw_points": required_raw_points,
         "missing_raw_points": missing_raw_points,
     }
@@ -137,17 +141,18 @@ def calculate_target(course: Course) -> TargetCalculation:
 
 
 def calculate_max_reachable_with_min_effort(course: Course) -> MaxEffortCalculation:
-    projection_lessons = [lesson for lesson in course.lessons if lesson.projection]
+    projection_lessons = [lesson for lesson in course.lessons if lesson.projected]
     total_raw_points = sum(lesson.max_points for lesson in course.lessons)
     current_raw_points = sum(
-        lesson.achieved_points for lesson in course.lessons if not lesson.projection
+        lesson.earned_points for lesson in course.lessons if not lesson.projected
     )
     available_raw_points = sum(lesson.max_points for lesson in projection_lessons)
     max_possible_raw_points = current_raw_points + available_raw_points
     reachable_scales = [
         point_scale
-        for point_scale in course.scale
-        if max_possible_raw_points >= ceil(point_scale.percentage * total_raw_points)
+        for point_scale in course.grade_scale
+        if max_possible_raw_points
+        >= ceil(point_scale.minimum_percentage * total_raw_points)
     ]
     common = {
         "total_raw_points": total_raw_points,
@@ -167,8 +172,8 @@ def calculate_max_reachable_with_min_effort(course: Course) -> MaxEffortCalculat
             **common,
         )
 
-    best_scale = max(reachable_scales, key=lambda point_scale: point_scale.points)
-    required_raw_points = ceil(best_scale.percentage * total_raw_points)
+    best_scale = max(reachable_scales, key=lambda point_scale: point_scale.grade_points)
+    required_raw_points = ceil(best_scale.minimum_percentage * total_raw_points)
     missing_raw_points = max(0, required_raw_points - current_raw_points)
     used_lessons = 0
     gathered_points = 0
@@ -181,8 +186,8 @@ def calculate_max_reachable_with_min_effort(course: Course) -> MaxEffortCalculat
         used_lessons += 1
 
     return MaxEffortCalculation(
-        max_reachable_grade_points=best_scale.points,
-        required_percentage=best_scale.percentage,
+        max_reachable_grade_points=best_scale.grade_points,
+        required_percentage=best_scale.minimum_percentage,
         required_raw_points=required_raw_points,
         missing_raw_points=missing_raw_points,
         minimum_extra_effort=missing_raw_points,
@@ -195,14 +200,16 @@ def calculate_max_reachable_with_min_effort(course: Course) -> MaxEffortCalculat
 def calculate_score_milestones(course: Course) -> list[ScoreMilestone]:
     total_raw_points = sum(lesson.max_points for lesson in course.lessons)
     confirmed_raw_points = sum(
-        lesson.achieved_points for lesson in course.lessons if not lesson.projection
+        lesson.earned_points for lesson in course.lessons if not lesson.projected
     )
     maximum_raw_points = confirmed_raw_points + sum(
-        lesson.max_points for lesson in course.lessons if lesson.projection
+        lesson.max_points for lesson in course.lessons if lesson.projected
     )
     milestones = []
-    for point_scale in sorted(course.scale, key=lambda item: item.percentage):
-        required_raw_points = ceil(point_scale.percentage * total_raw_points)
+    for point_scale in sorted(
+        course.grade_scale, key=lambda item: item.minimum_percentage
+    ):
+        required_raw_points = ceil(point_scale.minimum_percentage * total_raw_points)
         if confirmed_raw_points >= required_raw_points:
             status = "reached"
         elif maximum_raw_points >= required_raw_points:
@@ -211,8 +218,8 @@ def calculate_score_milestones(course: Course) -> list[ScoreMilestone]:
             status = "unavailable"
         milestones.append(
             ScoreMilestone(
-                percentage=point_scale.percentage,
-                grade_points=point_scale.points,
+                minimum_percentage=point_scale.minimum_percentage,
+                grade_points=point_scale.grade_points,
                 required_raw_points=required_raw_points,
                 status=status,
             )
@@ -223,9 +230,9 @@ def calculate_score_milestones(course: Course) -> list[ScoreMilestone]:
 def get_summary_rows(course: Course) -> list[tuple[str, str]]:
     total = sum(lesson.max_points for lesson in course.lessons)
     confirmed = sum(
-        lesson.achieved_points for lesson in course.lessons if not lesson.projection
+        lesson.earned_points for lesson in course.lessons if not lesson.projected
     )
-    projected = sum(lesson.achieved_points for lesson in course.lessons)
+    projected = sum(lesson.earned_points for lesson in course.lessons)
     return [
         ("Confirmed raw points", f"{confirmed}/{total}"),
         ("Confirmed percentage", format_percentage(confirmed / total if total else 0)),

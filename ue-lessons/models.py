@@ -5,28 +5,28 @@ from dataclasses import dataclass
 
 @dataclass
 class PointScale:
-    percentage: float
-    points: float
+    minimum_percentage: float
+    grade_points: float
 
     def __post_init__(self) -> None:
-        if not 0 <= self.percentage <= 1:
+        if not 0 <= self.minimum_percentage <= 1:
             raise ValueError("Percentage must be between 0 and 1.")
 
 
 @dataclass
 class Lesson:
     max_points: int
-    achieved_points: int
-    projection: bool = False
+    earned_points: int
+    projected: bool = False
 
     def __post_init__(self) -> None:
         if self.max_points < 0:
             raise ValueError("Max points cannot be negative.")
-        if self.achieved_points < 0:
+        if self.earned_points < 0:
             raise ValueError("Achieved points cannot be negative.")
-        if self.achieved_points > self.max_points:
+        if self.earned_points > self.max_points:
             raise ValueError(
-                f"Achieved points ({self.achieved_points}) cannot exceed "
+                f"Earned points ({self.earned_points}) cannot exceed "
                 f"max points ({self.max_points})."
             )
 
@@ -35,13 +35,13 @@ class Lesson:
 class Course:
     name: str
     lessons: list[Lesson]
-    scale: list[PointScale]
-    target_points: float = 1
+    grade_scale: list[PointScale]
+    target_grade_points: float = 1
 
     def __post_init__(self) -> None:
         if not self.name.strip():
             raise ValueError("Course name cannot be empty.")
-        if not self.scale:
+        if not self.grade_scale:
             raise ValueError(f"Course {self.name!r} must define a point scale.")
 
 
@@ -79,7 +79,7 @@ class MaxEffortCalculation:
 
 @dataclass
 class ScoreMilestone:
-    percentage: float
+    minimum_percentage: float
     grade_points: float
     required_raw_points: int
     status: str

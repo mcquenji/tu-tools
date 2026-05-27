@@ -24,7 +24,7 @@ class ReportTheme:
     border: str
     panel: str
     table_header: str
-    projection: str
+    projected_row: str
     reached: str
     reachable: str
     unavailable: str
@@ -40,7 +40,7 @@ THEMES = {
         border="#e9d5ff",
         panel="#faf5ff",
         table_header="#7c3aed",
-        projection="#f5f3ff",
+        projected_row="#f5f3ff",
         reached="#dcfce7",
         reachable="#ede9fe",
         unavailable="#f1f5f9",
@@ -54,7 +54,7 @@ THEMES = {
         border="#cbd5e1",
         panel="#f8fafc",
         table_header="#334155",
-        projection="#f1f5f9",
+        projected_row="#f1f5f9",
         reached="#f1f5f9",
         reachable="#f8fafc",
         unavailable="#f8fafc",
@@ -271,15 +271,15 @@ def create_pdf_report(
         rows = [["#", "Status", "Raw points", "Progress"]]
         for index, lesson in enumerate(course.lessons, start=1):
             progress = (
-                format_percentage(lesson.achieved_points / lesson.max_points)
+                format_percentage(lesson.earned_points / lesson.max_points)
                 if lesson.max_points
                 else "0%"
             )
             rows.append(
                 [
                     str(index),
-                    "Projection" if lesson.projection else "Completed",
-                    f"{lesson.achieved_points}/{lesson.max_points}",
+                    "Projection" if lesson.projected else "Completed",
+                    f"{lesson.earned_points}/{lesson.max_points}",
                     progress,
                 ]
             )
@@ -302,9 +302,9 @@ def create_pdf_report(
             ("ALIGN", (2, 1), (-1, -1), "RIGHT"),
         ]
         for index, lesson in enumerate(course.lessons, start=1):
-            if lesson.projection:
+            if lesson.projected:
                 table_style.append(
-                    ("BACKGROUND", (0, index), (-1, index), color(theme.projection))
+                    ("BACKGROUND", (0, index), (-1, index), color(theme.projected_row))
                 )
         table.setStyle(TableStyle(table_style))
         return table
@@ -313,7 +313,7 @@ def create_pdf_report(
         unavailable = milestone.status == "unavailable"
         label = f"{format_grade_points(milestone.grade_points)} grade points"
         requirement = (
-            f"{format_percentage(milestone.percentage)} / "
+            f"{format_percentage(milestone.minimum_percentage)} / "
             f"{milestone.required_raw_points} raw points"
         )
         status = milestone.status.title()
@@ -496,9 +496,9 @@ def create_pdf_report(
             story.append(PageBreak())
         total = sum(lesson.max_points for lesson in course.lessons)
         confirmed = sum(
-            lesson.achieved_points for lesson in course.lessons if not lesson.projection
+            lesson.earned_points for lesson in course.lessons if not lesson.projected
         )
-        projected = sum(lesson.achieved_points for lesson in course.lessons)
+        projected = sum(lesson.earned_points for lesson in course.lessons)
         target = calculate_target(course)
         story.extend(
             [
@@ -522,7 +522,7 @@ def create_pdf_report(
                                 "Projected score",
                                 f"{projected}/{total}",
                                 format_percentage(projected / total if total else 0),
-                                theme.projection,
+                                theme.projected_row,
                             ),
                             kpi_card(
                                 "Projected grade",
