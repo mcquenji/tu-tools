@@ -5,7 +5,7 @@ from pathlib import Path
 
 from rich.console import Console
 from rich.panel import Panel
-from rich.prompt import Confirm
+from rich.prompt import Confirm, Prompt
 
 from config import load_courses
 from console_report import print_course
@@ -25,6 +25,12 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     )
     output.add_argument(
         "--no-pdf", action="store_true", help="Only display the console report."
+    )
+    parser.add_argument(
+        "--style",
+        choices=("vivid", "formal"),
+        default=None,
+        help="PDF visual style. Defaults to vivid for non-interactive generation.",
     )
 
 
@@ -48,8 +54,16 @@ def run(args: argparse.Namespace) -> int:
     if not wants_pdf:
         return 0
 
+    style = args.style
+    if style is None:
+        style = (
+            "vivid"
+            if args.pdf
+            else Prompt.ask("PDF style", choices=["vivid", "formal"], default="vivid")
+        )
+
     try:
-        create_pdf_report(courses, args.output)
+        create_pdf_report(courses, args.output, style=style)
     except RuntimeError as error:
         console.print(Panel(str(error), title="PDF creation failed", border_style="red"))
         return 1

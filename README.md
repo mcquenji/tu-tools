@@ -67,6 +67,16 @@ Create the PDF without being prompted:
 python tu-tools.py ue-lessons --pdf
 ```
 
+PDF reports use the vivid dashboard style by default. Generate the restrained
+formal variant explicitly:
+
+```bash
+python tu-tools.py ue-lessons --pdf --style formal
+```
+
+When you create a PDF through the interactive prompt, the command also asks
+which style to use and defaults to `vivid`.
+
 Display results without creating or prompting for a PDF:
 
 ```bash

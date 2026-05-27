@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from math import ceil
 
-from models import Course, Lesson, MaxEffortCalculation, TargetCalculation
+from models import (
+    Course,
+    MaxEffortCalculation,
+    ScoreMilestone,
+    TargetCalculation,
+)
 
 
 def format_grade_points(value: float) -> str:
@@ -185,6 +190,34 @@ def calculate_max_reachable_with_min_effort(course: Course) -> MaxEffortCalculat
         lessons_skippable=len(projection_lessons) - used_lessons,
         **common,
     )
+
+
+def calculate_score_milestones(course: Course) -> list[ScoreMilestone]:
+    total_raw_points = sum(lesson.max_points for lesson in course.lessons)
+    confirmed_raw_points = sum(
+        lesson.achieved_points for lesson in course.lessons if not lesson.projection
+    )
+    maximum_raw_points = confirmed_raw_points + sum(
+        lesson.max_points for lesson in course.lessons if lesson.projection
+    )
+    milestones = []
+    for point_scale in sorted(course.scale, key=lambda item: item.percentage):
+        required_raw_points = ceil(point_scale.percentage * total_raw_points)
+        if confirmed_raw_points >= required_raw_points:
+            status = "reached"
+        elif maximum_raw_points >= required_raw_points:
+            status = "reachable"
+        else:
+            status = "unavailable"
+        milestones.append(
+            ScoreMilestone(
+                percentage=point_scale.percentage,
+                grade_points=point_scale.points,
+                required_raw_points=required_raw_points,
+                status=status,
+            )
+        )
+    return milestones
 
 
 def get_summary_rows(course: Course) -> list[tuple[str, str]]:

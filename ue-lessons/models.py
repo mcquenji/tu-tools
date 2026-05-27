@@ -75,3 +75,11 @@ class MaxEffortCalculation:
     minimum_extra_effort: int
     lessons_needed: int
     lessons_skippable: int
+
+
+@dataclass
+class ScoreMilestone:
+    percentage: float
+    grade_points: float
+    required_raw_points: int
+    status: str
